@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard – PuttyFlow{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="screen-title mb-0"><i class="bi bi-speedometer2 me-2"></i>Production Control</h1>
+    <span class="text-secondary">{{ orders|length }} active orders</span>
+</div>
+
+{% if low_stock %}
+<div class="alert alert-warning d-flex align-items-center mb-4">
+    <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+    <div>
+        <strong>Low Stock Alert:</strong>
+        {% for m in low_stock %}
+            {{ m.name }} ({{ "%.0f"|format(m.stock) }} {{ m.unit }}){% if not loop.last %}, {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4 mb-4">
+    <!-- New Order -->
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header border-secondary">
+                <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>New Order</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('new_order') }}">
+                    <div class="mb-3">
+                        <label class="form-label">Order Number</label>
+                        <input type="text" name="order_number" class="form-control bg-dark text-light border-secondary" required
+                               placeholder="ORD-2026-XXX" value="ORD-{{ range(100,999)|random }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Customer</label>
+                        <input type="text" name="customer" class="form-control bg-dark text-light border-secondary" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Product</label>
+                        <select name="product_id" class="form-select bg-dark text-light border-secondary" required>
+                            {% for p in products %}
+                            <option value="{{ p.id }}">{{ p.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Quantity (kg)</label>
+                        <input type="number" name="quantity_kg" class="form-control bg-dark text-light border-secondary" 
+                               min="10" step="10" value="200" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <input type="text" name="notes" class="form-control bg-dark text-light border-secondary">
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Create Order</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stock Overview -->
+    <div class="col-lg-8">
+        <div class="card h-100">
+            <div class="card-header border-secondary d-flex justify-content-between">
+                <h5 class="mb-0"><i class="bi bi-boxes me-2"></i>Raw Material Stock</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Material</th>
+                                <th class="text-end">Stock</th>
+                                <th class="text-end">Min</th>
+                                <th>Adjust</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for m in materials %}
+                            <tr>
+                                <td>{{ m.name }}</td>
+                                <td class="text-end {% if m.stock < m.min_stock %}low-stock{% endif %}">
+                                    {{ "%.1f"|format(m.stock) }} {{ m.unit }}
+                                </td>
+                                <td class="text-end text-secondary">{{ "%.0f"|format(m.min_stock) }}</td>
+                                <td>
+                                    <form method="post" action="{{ url_for('adjust_stock') }}" class="d-flex gap-1">
+                                        <input type="hidden" name="material_id" value="{{ m.id }}">
+                                        <input type="number" name="change" class="form-control form-control-sm bg-dark text-light border-secondary" 
+                                               style="width:90px" step="1" placeholder="+/-" required>
+                                        <input type="text" name="reason" class="form-control form-control-sm bg-dark text-light border-secondary" 
+                                               style="width:120px" placeholder="Reason" value="Restock">
+                                        <button class="btn btn-sm btn-outline-light">OK</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Orders Table -->
+<div class="card">
+    <div class="card-header border-secondary">
+        <h5 class="mb-0"><i class="bi bi-list-check me-2"></i>Orders Board</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Order #</th>
+                        <th>Customer</th>
+                        <th>Product</th>
+                        <th class="text-end">Qty (kg)</th>
+                        <th>Status</th>
+                        <th>Station</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for o in orders %}
+                    <tr>
+                        <td class="fw-semibold">{{ o.order_number }}</td>
+                        <td>{{ o.customer or '—' }}</td>
+                        <td>{{ o.product_name }}</td>
+                        <td class="text-end">{{ "%.0f"|format(o.quantity_kg) }}</td>
+                        <td>
+                            <span class="status-badge status-{{ o.status }}">{{ o.status }}</span>
+                        </td>
+                        <td>
+                            {% if o.mixing_station %}
+                                <span class="badge bg-info">Mixer {{ o.mixing_station }}</span>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-1">
+                                {% if o.status == 'queued' %}
+                                    <form method="post" action="{{ url_for('assign_mixing', order_id=o.id) }}" class="d-inline">
+                                        <select name="station" class="form-select form-select-sm bg-dark text-light border-secondary d-inline-block" style="width:auto">
+                                            <option value="1">M1</option>
+                                            <option value="2">M2</option>
+                                            <option value="3">M3</option>
+                                        </select>
+                                        <button class="btn btn-sm btn-primary">Assign</button>
+                                    </form>
+                                {% endif %}
+                                {% if o.status == 'mixing' %}
+                                    <form method="post" action="{{ url_for('update_status', order_id=o.id) }}">
+                                        <input type="hidden" name="status" value="mixed">
+                                        <button class="btn btn-sm btn-success">Mark Mixed</button>
+                                    </form>
+                                {% endif %}
+                                {% if o.status == 'mixed' %}
+                                    <form method="post" action="{{ url_for('update_status', order_id=o.id) }}">
+                                        <input type="hidden" name="status" value="packing">
+                                        <button class="btn btn-sm btn-warning text-dark">Start Packing</button>
+                                    </form>
+                                {% endif %}
+                                {% if o.status == 'packing' %}
+                                    <form method="post" action="{{ url_for('update_status', order_id=o.id) }}">
+                                        <input type="hidden" name="status" value="packed">
+                                        <button class="btn btn-sm btn-success">Mark Packed</button>
+                                    </form>
+                                {% endif %}
+                                {% if o.status == 'packed' %}
+                                    <form method="post" action="{{ url_for('update_status', order_id=o.id) }}">
+                                        <input type="hidden" name="status" value="ready">
+                                        <button class="btn btn-sm btn-info">Ready to Ship</button>
+                                    </form>
+                                {% endif %}
+                                {% if o.status == 'ready' %}
+                                    <form method="post" action="{{ url_for('update_status', order_id=o.id) }}">
+                                        <input type="hidden" name="status" value="shipped">
+                                        <button class="btn btn-sm btn-secondary">Shipped</button>
+                                    </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="7" class="text-center text-secondary py-4">No orders yet</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
